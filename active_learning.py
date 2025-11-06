@@ -650,12 +650,18 @@ class YOLOActiveLearning:
         return yaml_path
     
     def train_yolo_model(self, cycle: int) -> str:
-        """YOLO 모델 학습"""
+        """YOLO 모델 학습 (DDP 지원)"""
         yaml_path = os.path.join(self.dataset_dir, 'dataset.yaml')
         results_dir = os.path.join(self.output_dir, f"cycle_{cycle}", "training")
-        
-        print(f"YOLO 모델 학습 시작 - Cycle {cycle}")
-        
+
+        # DDP 설정
+        if self.config.use_ddp:
+            device = self.config.gpu_devices  # [0,1,2,3] 형태
+            print(f"YOLO 모델 학습 시작 - Cycle {cycle} (DDP 모드: GPU {device})")
+        else:
+            device = self.device
+            print(f"YOLO 모델 학습 시작 - Cycle {cycle} (단일 GPU: {device})")
+
         results = self.detector.model.train(
             data=yaml_path,
             epochs=self.config.yolo_epochs,
@@ -664,12 +670,12 @@ class YOLOActiveLearning:
             patience=self.config.yolo_patience,
             project=results_dir,
             name="yolo_model",
-            device=self.device
+            device=device  # DDP 시 리스트, 단일 GPU 시 torch.device
         )
-        
+
         trained_model_path = os.path.join(results_dir, "yolo_model", "weights", "best.pt")
         self.detector.update_yolo_model(trained_model_path)
-        
+
         print(f"YOLO 모델 학습 완료: {trained_model_path}")
         return trained_model_path
     

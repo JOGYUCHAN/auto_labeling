@@ -45,6 +45,13 @@ try:
 except ImportError:
     QWEN_VL_AVAILABLE = False
 
+# Accelerate 확인
+try:
+    import accelerate
+    ACCELERATE_AVAILABLE = True
+except ImportError:
+    ACCELERATE_AVAILABLE = False
+
 # CNN 관련
 from torchvision import models, transforms
 
@@ -190,6 +197,11 @@ class MultimodalFilterClassifier:
 
         # 캡션 저장용 딕셔너리 (메모리 캐시)
         self.captions_cache: Dict[str, str] = {}
+
+        # 기본값 설정 (초기화 실패 대비)
+        self.vlm_model = None
+        self.text_embed_dim = 768  # 기본값
+        self.image_embed_dim = 1024  # DenseNet121 기본값
         
         # Instruction prompt 설정
         if custom_prompt:
@@ -227,15 +239,28 @@ class MultimodalFilterClassifier:
             if self.vlm_model_type == "instructblip":
                 if not INSTRUCTBLIP_AVAILABLE:
                     raise ImportError("transformers 라이브러리에서 InstructBLIP 필요")
-                
+
                 print("InstructBLIP 모델 로딩...")
                 model_name = "Salesforce/instructblip-vicuna-7b"
                 self.vlm_processor = InstructBlipProcessor.from_pretrained(model_name)
-                self.vlm_model = InstructBlipForConditionalGeneration.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map=self.device
-                )
+
+                # Accelerate 사용 가능 여부에 따라 로딩 방식 결정
+                if ACCELERATE_AVAILABLE and torch.cuda.is_available():
+                    # 단일 GPU로 제한 (멀티 GPU 분산 시 텐서 디바이스 불일치 방지)
+                    device_map = {"": self.device}
+                    self.vlm_model = InstructBlipForConditionalGeneration.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16,
+                        device_map=device_map
+                    )
+                else:
+                    print("  ⚠️ Accelerate 미설치 - CPU/단일 GPU 모드로 로딩")
+                    self.vlm_model = InstructBlipForConditionalGeneration.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+                    )
+                    self.vlm_model.to(self.device)
+
                 self.vlm_model.eval()
                 self.text_embed_dim = 4096  # Vicuna-7B hidden size
                 print("✓ InstructBLIP 로딩 완료")
@@ -243,15 +268,28 @@ class MultimodalFilterClassifier:
             elif self.vlm_model_type == "llava":
                 if not LLAVA_AVAILABLE:
                     raise ImportError("transformers 라이브러리에서 LLaVA 필요")
-                
+
                 print("LLaVA 모델 로딩...")
                 model_name = "llava-hf/llava-1.5-7b-hf"
                 self.vlm_processor = AutoProcessor.from_pretrained(model_name)
-                self.vlm_model = LlavaForConditionalGeneration.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map=self.device
-                )
+
+                # Accelerate 사용 가능 여부에 따라 로딩 방식 결정
+                if ACCELERATE_AVAILABLE and torch.cuda.is_available():
+                    # 단일 GPU로 제한 (멀티 GPU 분산 시 텐서 디바이스 불일치 방지)
+                    device_map = {"": self.device}
+                    self.vlm_model = LlavaForConditionalGeneration.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16,
+                        device_map=device_map
+                    )
+                else:
+                    print("  ⚠️ Accelerate 미설치 - CPU/단일 GPU 모드로 로딩")
+                    self.vlm_model = LlavaForConditionalGeneration.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+                    )
+                    self.vlm_model.to(self.device)
+
                 self.vlm_model.eval()
                 self.text_embed_dim = 4096  # LLaMA hidden size
                 print("✓ LLaVA 로딩 완료")
@@ -263,12 +301,27 @@ class MultimodalFilterClassifier:
                 print("Qwen-VL 모델 로딩...")
                 model_name = "Qwen/Qwen-VL-Chat"
                 self.vlm_tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-                self.vlm_model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map={"": self.device} if torch.cuda.is_available() else "auto",
-                    trust_remote_code=True
-                )
+
+                # Accelerate 사용 가능 여부에 따라 로딩 방식 결정
+                if ACCELERATE_AVAILABLE and torch.cuda.is_available():
+                    # 단일 GPU로 제한 (멀티 GPU 분산 시 텐서 디바이스 불일치 방지)
+                    device_map = {"": self.device}
+                    self.vlm_model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16,
+                        device_map=device_map,
+                        trust_remote_code=True
+                    )
+                else:
+                    if not ACCELERATE_AVAILABLE:
+                        print("  ⚠️ Accelerate 미설치 - CPU/단일 GPU 모드로 로딩")
+                    self.vlm_model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                        trust_remote_code=True
+                    )
+                    self.vlm_model.to(self.device)
+
                 self.vlm_model.eval()
                 self.text_embed_dim = 4096  # Qwen hidden size
                 print("✓ Qwen-VL 로딩 완료")
@@ -304,7 +357,12 @@ class MultimodalFilterClassifier:
                 
         except Exception as e:
             print(f"✗ VLM 모델 초기화 실패: {e}")
+            print(f"✗ 오류 상세: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
             self.vlm_model = None
+            # text_embed_dim은 이미 기본값(768)으로 설정됨
+            raise RuntimeError(f"VLM 모델 초기화 실패: {e}") from e
     
     def _initialize_cnn(self):
         """CNN 특징 추출기 초기화"""
