@@ -39,9 +39,11 @@ class ExperimentConfig:
     
     # 멀티모달 필터 설정
     use_multimodal_filter: bool = False
-    multimodal_vlm_type: str = "blip"  # "blip" or "vit-gpt2"
+    multimodal_vlm_type: str = "blip"  # "blip", "vit-gpt2", "instructblip", "llava", "qwen-vl"
     multimodal_train_samples: int = 100  # 클래스당 학습 샘플 수
     multimodal_iou_threshold: float = 0.5  # Target/Non-target 분류 IoU 임계값
+    save_captions: bool = True  # VLM 캡션 저장 여부
+    captions_output_dir: Optional[str] = None  # 캡션 저장 디렉토리 (None이면 output_dir/captions)
     
     # YOLO 학습 설정
     yolo_epochs: int = 50

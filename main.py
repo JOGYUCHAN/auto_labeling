@@ -201,9 +201,17 @@ def main():
     
     # 3. 멀티모달 필터 (NEW!)
     use_multimodal_filter = True
-    multimodal_vlm_type = "blip"  # "blip" 또는 "vit-gpt2"
+
+    # VLM 모델 선택 (아래 중 하나 선택)
+    multimodal_vlm_type = "qwen-vl"  # 추천 모델 옵션:
+    # - "blip": 가볍고 빠름 (기본)
+    # - "vit-gpt2": BLIP 대안, 비슷한 성능
+    # - "instructblip": 상세한 설명, 7B 모델 (VRAM 요구량 높음)
+    # - "llava": 멀티모달 대화형 모델, 7B (VRAM 요구량 높음)
+    # - "qwen-vl": Qwen 기반 VLM, 상세 설명 지원 ✓ 추천!
+
     multimodal_train_samples = 100  # 클래스당 IoU 기반 학습 샘플 수
-    
+
     # 멀티모달 Target/Non-target 분류 IoU 임계값
     multimodal_iou_threshold = 0.5  # Target: ≥0.5, Non-target: <0.5
     # 권장값:
@@ -212,7 +220,11 @@ def main():
     # - 0.5: 표준 (COCO 기준, 권장) ✓
     # - 0.6: 엄격 (고품질 Target만)
     # - 0.7: 매우 엄격 (최고 품질만, Target 부족 가능)
-    
+
+    # 캡션 저장 설정
+    save_captions = True  # VLM이 생성한 객체 설명을 JSON 파일로 저장
+    captions_output_dir = None  # None이면 output_dir/captions 사용
+
     # 공통 설정
     target_keywords = ["car", "vehicle"]  # 양성 객체 키워드
     
@@ -247,15 +259,15 @@ def main():
         return
     
     if use_multimodal_filter:
-        valid_vlm = ["blip", "vit-gpt2"]
+        valid_vlm = ["blip", "vit-gpt2", "instructblip", "llava", "qwen-vl"]
         if multimodal_vlm_type not in valid_vlm:
             print(f"✗ 오류: 멀티모달 VLM은 {valid_vlm} 중 하나여야 합니다")
             return
-        
+
         if not target_keywords:
             print("✗ 오류: 멀티모달 필터 사용 시 target_keywords 필요")
             return
-        
+
         print(f"\n✓ 멀티모달 필터 설정:")
         print(f"   - VLM 모델: {multimodal_vlm_type}")
         print(f"   - CNN 모델: DenseNet121")
@@ -264,6 +276,10 @@ def main():
         print(f"   - IoU 임계값: {multimodal_iou_threshold}")
         print(f"     · Target: IoU ≥ {multimodal_iou_threshold}")
         print(f"     · Non-target: IoU < {multimodal_iou_threshold}")
+        print(f"   - 캡션 저장: {'활성화' if save_captions else '비활성화'}")
+        if save_captions:
+            caption_dir = captions_output_dir if captions_output_dir else os.path.join(output_dir, "captions")
+            print(f"   - 캡션 저장 위치: {caption_dir}")
         print(f"   - Cycle 1에서 GT와 IoU 비교하여 자동 분류")
     
     elif use_captioning_classifier:
@@ -335,6 +351,8 @@ def main():
         multimodal_vlm_type=multimodal_vlm_type,
         multimodal_train_samples=multimodal_train_samples,
         multimodal_iou_threshold=multimodal_iou_threshold,
+        save_captions=save_captions,
+        captions_output_dir=captions_output_dir,
         target_keywords=target_keywords,
         yolo_epochs=yolo_epochs,
         yolo_batch_size=yolo_batch_size,

@@ -67,14 +67,23 @@ class YOLOActiveLearning:
         # 분류기 초기화
         if self.config.use_multimodal_filter:
             print("멀티모달 필터 초기화...")
+            # 캡션 저장 디렉토리 설정
+            captions_dir = self.config.captions_output_dir
+            if captions_dir is None:
+                captions_dir = os.path.join(self.output_dir, "captions")
+
             self.classifier = MultimodalFilterClassifier(
                 vlm_model_type=self.config.multimodal_vlm_type,
                 target_keywords=self.config.target_keywords,
                 device=self.device,
                 conf_threshold=self.config.class_conf_threshold,
-                gpu_num=self.config.gpu_num
+                gpu_num=self.config.gpu_num,
+                save_captions=self.config.save_captions,
+                captions_dir=captions_dir
             )
             print("✓ 멀티모달 필터 초기화 완료")
+            if self.config.save_captions:
+                print(f"  - 캡션 저장: {captions_dir}")
             
         elif self.config.use_captioning_classifier:
             print("캡셔닝 분류기 초기화...")
