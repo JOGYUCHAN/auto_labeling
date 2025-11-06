@@ -203,12 +203,15 @@ def main():
     use_multimodal_filter = True
 
     # VLM 모델 선택 (아래 중 하나 선택)
-    multimodal_vlm_type = "qwen-vl"  # 추천 모델 옵션:
-    # - "blip": 가볍고 빠름 (기본)
-    # - "vit-gpt2": BLIP 대안, 비슷한 성능
-    # - "instructblip": 상세한 설명, 7B 모델 (VRAM 요구량 높음)
-    # - "llava": 멀티모달 대화형 모델, 7B (VRAM 요구량 높음)
-    # - "qwen-vl": Qwen 기반 VLM, 상세 설명 지원 ✓ 추천!
+    multimodal_vlm_type = "blip"  # 추천 모델 옵션:
+    # - "blip": 가볍고 빠름 (~1GB VRAM) ✓ RTX 3080 권장!
+    # - "vit-gpt2": BLIP 대안, 비슷한 성능 (~1GB VRAM)
+    # - "instructblip": 상세한 설명, 7B 모델 (>16GB VRAM 필요)
+    # - "llava": 멀티모달 대화형 모델, 7B (>16GB VRAM 필요)
+    # - "qwen-vl": Qwen 기반 VLM, 상세 설명 지원 (>16GB VRAM 필요)
+    #
+    # ⚠️ RTX 3080 (9.78 GB)에서는 blip 또는 vit-gpt2만 사용 가능합니다!
+    # 대형 모델(instructblip, llava, qwen-vl)은 A100, V100 등 필요
 
     multimodal_train_samples = 100  # 클래스당 IoU 기반 학습 샘플 수
 
