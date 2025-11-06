@@ -1,11 +1,15 @@
 """
-main.py - 멀티모달 필터 지원 Active Learning 실험 실행기
+main.py - 멀티모달 필터 지원 Active Learning 실험 실행기 (DDP 지원)
 """
 
 import os
 
-# GPU 설정 (가장 먼저 실행)
-# os.environ['CUDA_VISIBLE_DEVICES'] = '2'  # GPU 2번 사용
+# DDP 설정 (가장 먼저 실행)
+# 단일 GPU 사용 시:
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'  # GPU 2번만 사용
+
+# 멀티 GPU 사용 시 (DDP):
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'  # 4개 GPU 사용
 
 import time
 import traceback
@@ -185,7 +189,11 @@ def main():
     iou_threshold = 0.5
     class_conf_threshold = 0.5
     max_cycles = 10
-    gpu_num = 2 
+
+    # GPU 설정
+    use_ddp = True  # DDP(Distributed Data Parallel) 사용 여부
+    gpu_devices = [0, 1, 2, 3]  # 사용할 GPU 리스트 (DDP 시)
+    gpu_num = 2  # 단일 GPU 모드 시 사용할 GPU 번호 (VLM 초기화용) 
     
     # ==========================================
     # 분류기 설정 (3가지 중 1개만 선택)
@@ -341,6 +349,8 @@ def main():
         output_dir=output_dir,
         labels_available=labels_available,
         gpu_num=gpu_num,
+        use_ddp=use_ddp,
+        gpu_devices=gpu_devices,
         conf_threshold=conf_threshold,
         iou_threshold=iou_threshold,
         class_conf_threshold=class_conf_threshold,
