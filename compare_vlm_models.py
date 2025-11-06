@@ -10,13 +10,13 @@ compare_vlm_models.py - VLM 모델별 캡션 생성 결과 비교 스크립트
 - Qwen-VL: Qwen 기반 VLM, 상세 설명 지원 (>16GB VRAM 필요)
 
 사용법:
-    python compare_vlm_models.py --image_dir ./samples --output_dir ./outputs --num_images 5
+    1. 아래 CONFIG 섹션에서 경로 설정
+    2. python compare_vlm_models.py 실행
 
 """
 
 import os
 import sys
-import argparse
 import cv2
 import numpy as np
 import torch
@@ -26,6 +26,30 @@ import matplotlib.font_manager as fm
 from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
+
+# ============================================================================
+# CONFIG: 여기서 설정을 변경하세요
+# ============================================================================
+
+# 이미지 디렉토리 (샘플 이미지가 있는 폴더)
+IMAGE_DIR = "./sample_images"
+
+# 출력 디렉토리 (결과를 저장할 폴더)
+OUTPUT_DIR = "./vlm_comparison_results"
+
+# 테스트할 이미지 개수
+NUM_IMAGES = 5
+
+# 테스트할 모델 선택
+# - None: 모든 모델 테스트 (VRAM >16GB 권장)
+# - ['blip', 'vit-gpt2']: 경량 모델만 (RTX 3080 권장)
+# - ['blip', 'instructblip']: 특정 모델만
+MODELS_TO_TEST = ['blip', 'vit-gpt2']  # RTX 3080 기본 설정
+
+# 사용할 GPU 번호 (0부터 시작)
+GPU_NUM = 0
+
+# ============================================================================
 
 # 프로젝트 모듈 임포트
 try:
@@ -472,46 +496,21 @@ def get_image_files(image_dir, num_images=5):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='VLM 모델별 이미지 캡션 생성 비교',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-사용 예시:
-  # 기본 사용 (모든 모델 테스트)
-  python compare_vlm_models.py --image_dir ./samples --output_dir ./results
-
-  # 경량 모델만 테스트 (RTX 3080 권장)
-  python compare_vlm_models.py --image_dir ./samples --output_dir ./results --models blip vit-gpt2
-
-  # 대형 모델만 테스트 (>16GB VRAM 필요)
-  python compare_vlm_models.py --image_dir ./samples --output_dir ./results --models instructblip llava qwen-vl
-
-  # 이미지 개수 지정
-  python compare_vlm_models.py --image_dir ./samples --output_dir ./results --num_images 10
-        """
-    )
-
-    parser.add_argument('--image_dir', type=str, required=True,
-                       help='샘플 이미지가 있는 디렉토리')
-    parser.add_argument('--output_dir', type=str, required=True,
-                       help='결과를 저장할 디렉토리')
-    parser.add_argument('--num_images', type=int, default=5,
-                       help='테스트할 이미지 개수 (기본값: 5)')
-    parser.add_argument('--models', nargs='+',
-                       choices=['blip', 'vit-gpt2', 'instructblip', 'llava', 'qwen-vl'],
-                       help='테스트할 모델 선택 (기본값: 전체)')
-    parser.add_argument('--gpu', type=int, default=0,
-                       help='사용할 GPU 번호 (기본값: 0)')
-
-    args = parser.parse_args()
+    # CONFIG 변수 사용
+    image_dir = IMAGE_DIR
+    output_dir = OUTPUT_DIR
+    num_images = NUM_IMAGES
+    models_to_test = MODELS_TO_TEST
+    gpu_num = GPU_NUM
 
     # 이미지 디렉토리 확인
-    if not os.path.exists(args.image_dir):
-        print(f"⚠️ 이미지 디렉토리를 찾을 수 없습니다: {args.image_dir}")
+    if not os.path.exists(image_dir):
+        print(f"⚠️ 이미지 디렉토리를 찾을 수 없습니다: {image_dir}")
+        print(f"   스크립트 상단의 IMAGE_DIR 설정을 확인하세요.")
         return
 
     # 이미지 파일 가져오기
-    image_files = get_image_files(args.image_dir, args.num_images)
+    image_files = get_image_files(image_dir, num_images)
     if len(image_files) == 0:
         print("⚠️ 처리할 이미지가 없습니다.")
         return
@@ -519,17 +518,18 @@ def main():
     print(f"\n{'='*70}")
     print("VLM 모델 비교 스크립트")
     print(f"{'='*70}")
-    print(f"이미지 디렉토리: {args.image_dir}")
-    print(f"출력 디렉토리: {args.output_dir}")
+    print(f"이미지 디렉토리: {image_dir}")
+    print(f"출력 디렉토리: {output_dir}")
     print(f"테스트 이미지 수: {len(image_files)}")
-    print(f"GPU: cuda:{args.gpu}" if torch.cuda.is_available() else "CPU 모드")
+    print(f"테스트 모델: {models_to_test if models_to_test else '전체'}")
+    print(f"GPU: cuda:{gpu_num}" if torch.cuda.is_available() else "CPU 모드")
     print(f"{'='*70}\n")
 
     # Device 설정
-    device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{gpu_num}" if torch.cuda.is_available() else "cpu")
 
     # 비교기 생성
-    comparator = VLMModelComparator(device=device, models_to_test=args.models)
+    comparator = VLMModelComparator(device=device, models_to_test=models_to_test)
 
     # 모델 로드
     comparator.load_models()
@@ -538,15 +538,15 @@ def main():
     results = comparator.generate_captions_for_images(image_files)
 
     # 결과 시각화
-    comparator.visualize_results(results, args.output_dir)
+    comparator.visualize_results(results, output_dir)
 
     print(f"\n{'='*70}")
     print("완료!")
     print(f"{'='*70}")
     print(f"\n결과 확인:")
-    print(f"  1. 개별 이미지 비교: {args.output_dir}/*_comparison.png")
-    print(f"  2. 전체 비교 테이블: {args.output_dir}/comparison_table.html")
-    print(f"  3. 통계 정보: {args.output_dir}/statistics.txt")
+    print(f"  1. 개별 이미지 비교: {output_dir}/*_comparison.png")
+    print(f"  2. 전체 비교 테이블: {output_dir}/comparison_table.html")
+    print(f"  3. 통계 정보: {output_dir}/statistics.txt")
     print()
 
 

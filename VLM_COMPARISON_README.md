@@ -30,72 +30,147 @@ pip install accelerate
 ### 기본 사용법
 
 ```bash
-python compare_vlm_models.py --image_dir <이미지_디렉토리> --output_dir <출력_디렉토리>
+# 1. 스크립트 상단의 CONFIG 섹션에서 설정 변경
+# 2. 스크립트 실행
+python compare_vlm_models.py
 ```
 
-### 옵션
+### CONFIG 설정 옵션
 
-- `--image_dir`: 샘플 이미지가 있는 디렉토리 경로 (필수)
-- `--output_dir`: 결과를 저장할 디렉토리 경로 (필수)
-- `--num_images`: 테스트할 이미지 개수 (기본값: 5)
-- `--models`: 테스트할 모델 선택 (기본값: 전체 모델)
-  - 선택 가능: `blip`, `vit-gpt2`, `instructblip`, `llava`, `qwen-vl`
-- `--gpu`: 사용할 GPU 번호 (기본값: 0)
+스크립트 파일(`compare_vlm_models.py`) 상단의 CONFIG 섹션에서 다음 변수들을 수정하세요:
+
+```python
+# 이미지 디렉토리 (샘플 이미지가 있는 폴더)
+IMAGE_DIR = "./sample_images"
+
+# 출력 디렉토리 (결과를 저장할 폴더)
+OUTPUT_DIR = "./vlm_comparison_results"
+
+# 테스트할 이미지 개수
+NUM_IMAGES = 5
+
+# 테스트할 모델 선택
+# - None: 모든 모델 테스트 (VRAM >16GB 권장)
+# - ['blip', 'vit-gpt2']: 경량 모델만 (RTX 3080 권장)
+# - ['blip', 'instructblip']: 특정 모델만
+MODELS_TO_TEST = ['blip', 'vit-gpt2']  # RTX 3080 기본 설정
+
+# 사용할 GPU 번호 (0부터 시작)
+GPU_NUM = 0
+```
 
 ## 사용 예시
 
-### 1. 모든 모델 테스트 (>16GB VRAM 필요)
+### 1. 경량 모델 테스트 (RTX 3080 기본 설정)
 
-```bash
-python compare_vlm_models.py \
-    --image_dir ./sample_images \
-    --output_dir ./vlm_comparison_results
+스크립트 상단 CONFIG 섹션:
+```python
+IMAGE_DIR = "./sample_images"
+OUTPUT_DIR = "./vlm_comparison_results"
+NUM_IMAGES = 5
+MODELS_TO_TEST = ['blip', 'vit-gpt2']  # 기본값
+GPU_NUM = 0
 ```
 
-### 2. 경량 모델만 테스트 (RTX 3080 권장)
-
+실행:
 ```bash
-python compare_vlm_models.py \
-    --image_dir ./sample_images \
-    --output_dir ./vlm_comparison_results \
-    --models blip vit-gpt2
+python compare_vlm_models.py
+```
+
+### 2. 모든 모델 테스트 (>16GB VRAM 필요)
+
+스크립트 상단 CONFIG 섹션:
+```python
+IMAGE_DIR = "./sample_images"
+OUTPUT_DIR = "./vlm_comparison_results"
+NUM_IMAGES = 5
+MODELS_TO_TEST = None  # 모든 모델
+GPU_NUM = 0
+```
+
+실행:
+```bash
+python compare_vlm_models.py
 ```
 
 ### 3. 대형 모델만 테스트 (>16GB VRAM 필요)
 
+스크립트 상단 CONFIG 섹션:
+```python
+IMAGE_DIR = "./sample_images"
+OUTPUT_DIR = "./vlm_comparison_results"
+NUM_IMAGES = 5
+MODELS_TO_TEST = ['instructblip', 'llava', 'qwen-vl']
+GPU_NUM = 0
+```
+
+실행:
 ```bash
-python compare_vlm_models.py \
-    --image_dir ./sample_images \
-    --output_dir ./vlm_comparison_results \
-    --models instructblip llava qwen-vl
+python compare_vlm_models.py
 ```
 
 ### 4. 특정 모델만 테스트
 
-```bash
-# BLIP과 InstructBLIP만 비교
-python compare_vlm_models.py \
-    --image_dir ./sample_images \
-    --output_dir ./vlm_comparison_results \
-    --models blip instructblip
+스크립트 상단 CONFIG 섹션:
+```python
+IMAGE_DIR = "./sample_images"
+OUTPUT_DIR = "./vlm_comparison_results"
+NUM_IMAGES = 5
+MODELS_TO_TEST = ['blip', 'instructblip']  # BLIP과 InstructBLIP만
+GPU_NUM = 0
 ```
 
-### 5. 이미지 개수 지정
-
+실행:
 ```bash
-python compare_vlm_models.py \
-    --image_dir ./sample_images \
-    --output_dir ./vlm_comparison_results \
-    --num_images 10
+python compare_vlm_models.py
 ```
 
-### 6. 특정 GPU 사용
+### 5. 이미지 개수 변경
 
+스크립트 상단 CONFIG 섹션:
+```python
+IMAGE_DIR = "./sample_images"
+OUTPUT_DIR = "./vlm_comparison_results"
+NUM_IMAGES = 10  # 10개로 변경
+MODELS_TO_TEST = ['blip', 'vit-gpt2']
+GPU_NUM = 0
+```
+
+실행:
 ```bash
-python compare_vlm_models.py \
-    --image_dir ./sample_images \
-    --output_dir ./vlm_comparison_results \
-    --gpu 1
+python compare_vlm_models.py
+```
+
+### 6. 다른 이미지 디렉토리 사용
+
+스크립트 상단 CONFIG 섹션:
+```python
+IMAGE_DIR = "/path/to/my/images"  # 경로 변경
+OUTPUT_DIR = "/path/to/output"
+NUM_IMAGES = 5
+MODELS_TO_TEST = ['blip', 'vit-gpt2']
+GPU_NUM = 0
+```
+
+실행:
+```bash
+python compare_vlm_models.py
+```
+
+### 7. 특정 GPU 사용
+
+스크립트 상단 CONFIG 섹션:
+```python
+IMAGE_DIR = "./sample_images"
+OUTPUT_DIR = "./vlm_comparison_results"
+NUM_IMAGES = 5
+MODELS_TO_TEST = ['blip', 'vit-gpt2']
+GPU_NUM = 1  # GPU 1번 사용
+```
+
+실행:
+```bash
+python compare_vlm_models.py
 ```
 
 ## 출력 결과
@@ -120,22 +195,27 @@ python compare_vlm_models.py \
 mkdir -p ~/vlm_test/samples
 # 테스트할 이미지 5장을 ~/vlm_test/samples/ 에 복사
 
-# 2. 경량 모델로 먼저 테스트 (빠름)
-python compare_vlm_models.py \
-    --image_dir ~/vlm_test/samples \
-    --output_dir ~/vlm_test/results_light \
-    --models blip vit-gpt2
+# 2. 스크립트의 CONFIG 섹션 수정 (경량 모델)
+# compare_vlm_models.py 파일 열어서:
+#   IMAGE_DIR = "~/vlm_test/samples"
+#   OUTPUT_DIR = "~/vlm_test/results_light"
+#   MODELS_TO_TEST = ['blip', 'vit-gpt2']
 
-# 3. 결과 확인
+# 3. 경량 모델로 먼저 테스트 (빠름)
+python compare_vlm_models.py
+
+# 4. 결과 확인
 firefox ~/vlm_test/results_light/comparison_table.html
 
-# 4. VRAM이 충분하면 대형 모델도 테스트
-python compare_vlm_models.py \
-    --image_dir ~/vlm_test/samples \
-    --output_dir ~/vlm_test/results_large \
-    --models instructblip llava
+# 5. VRAM이 충분하면 CONFIG 수정하여 대형 모델 테스트
+# compare_vlm_models.py 파일 열어서:
+#   OUTPUT_DIR = "~/vlm_test/results_large"
+#   MODELS_TO_TEST = ['instructblip', 'llava']
 
-# 5. 결과 비교
+# 6. 대형 모델 테스트
+python compare_vlm_models.py
+
+# 7. 결과 비교
 firefox ~/vlm_test/results_large/comparison_table.html
 ```
 
@@ -150,8 +230,8 @@ firefox ~/vlm_test/results_large/comparison_table.html
 - **A100 (40GB/80GB)**: 모든 모델 동시 사용 가능
 
 메모리 부족 오류가 발생하면:
-1. `--models` 옵션으로 경량 모델만 선택
-2. `--num_images`를 줄여서 테스트
+1. CONFIG의 `MODELS_TO_TEST`를 경량 모델만 선택 (`['blip', 'vit-gpt2']`)
+2. CONFIG의 `NUM_IMAGES`를 줄여서 테스트 (예: 3개)
 3. 다른 GPU 프로세스 종료
 
 ### 모델 다운로드
@@ -179,18 +259,19 @@ pip install accelerate
 
 ### CUDA Out of Memory 오류
 
-```bash
+스크립트 상단 CONFIG 섹션을 수정:
+
+```python
 # 경량 모델만 사용
-python compare_vlm_models.py \
-    --image_dir ./samples \
-    --output_dir ./results \
-    --models blip vit-gpt2
+MODELS_TO_TEST = ['blip', 'vit-gpt2']
 
 # 또는 이미지 개수 줄이기
-python compare_vlm_models.py \
-    --image_dir ./samples \
-    --output_dir ./results \
-    --num_images 3
+NUM_IMAGES = 3
+```
+
+그 후 실행:
+```bash
+python compare_vlm_models.py
 ```
 
 ### 특정 모델 로딩 실패
