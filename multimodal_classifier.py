@@ -197,6 +197,11 @@ class MultimodalFilterClassifier:
 
         # 캡션 저장용 딕셔너리 (메모리 캐시)
         self.captions_cache: Dict[str, str] = {}
+
+        # 기본값 설정 (초기화 실패 대비)
+        self.vlm_model = None
+        self.text_embed_dim = 768  # 기본값
+        self.image_embed_dim = 1024  # DenseNet121 기본값
         
         # Instruction prompt 설정
         if custom_prompt:
@@ -346,7 +351,12 @@ class MultimodalFilterClassifier:
                 
         except Exception as e:
             print(f"✗ VLM 모델 초기화 실패: {e}")
+            print(f"✗ 오류 상세: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
             self.vlm_model = None
+            # text_embed_dim은 이미 기본값(768)으로 설정됨
+            raise RuntimeError(f"VLM 모델 초기화 실패: {e}") from e
     
     def _initialize_cnn(self):
         """CNN 특징 추출기 초기화"""
