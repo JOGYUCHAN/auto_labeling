@@ -40,7 +40,7 @@ except ImportError:
     LLAVA_AVAILABLE = False
 
 try:
-    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor as QwenProcessor
+    from transformers import AutoModelForCausalLM, AutoTokenizer
     QWEN_VL_AVAILABLE = True
 except ImportError:
     QWEN_VL_AVAILABLE = False
@@ -155,16 +155,18 @@ class MultimodalDataset(Dataset):
 
 class MultimodalFilterClassifier:
     """멀티모달 필터링 분류기 (Instruction-based VLM 지원)"""
-    
+
     def __init__(self, vlm_model_type: str = "instructblip",
                  target_keywords: List[str] = None,
                  device: torch.device = None,
                  conf_threshold: float = 0.5,
                  gpu_num: int = 0,
-                 custom_prompt: str = None):
+                 custom_prompt: str = None,
+                 save_captions: bool = True,
+                 captions_dir: str = None):
         """
         멀티모달 분류기 초기화
-        
+
         Args:
             vlm_model_type: VLM 모델 타입 ("blip", "vit-gpt2", "instructblip", "llava", "qwen-vl")
             target_keywords: 타겟 키워드 리스트
@@ -172,15 +174,22 @@ class MultimodalFilterClassifier:
             conf_threshold: 신뢰도 임계값
             gpu_num: GPU 번호
             custom_prompt: 커스텀 instruction prompt (None이면 기본 프롬프트 사용)
+            save_captions: 캡션 저장 여부
+            captions_dir: 캡션 저장 디렉토리
         """
         if device is None:
             self.device = torch.device(f"cuda:{gpu_num}" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
-        
+
         self.vlm_model_type = vlm_model_type.lower()
         self.target_keywords = target_keywords if target_keywords else ['car']
         self.conf_threshold = conf_threshold
+        self.save_captions = save_captions
+        self.captions_dir = captions_dir if captions_dir else "./captions"
+
+        # 캡션 저장용 딕셔너리 (메모리 캐시)
+        self.captions_cache: Dict[str, str] = {}
         
         # Instruction prompt 설정
         if custom_prompt:
@@ -250,14 +259,14 @@ class MultimodalFilterClassifier:
             elif self.vlm_model_type == "qwen-vl":
                 if not QWEN_VL_AVAILABLE:
                     raise ImportError("transformers 라이브러리에서 Qwen-VL 필요")
-                
+
                 print("Qwen-VL 모델 로딩...")
                 model_name = "Qwen/Qwen-VL-Chat"
-                self.vlm_processor = QwenProcessor.from_pretrained(model_name, trust_remote_code=True)
-                self.vlm_model = Qwen2VLForConditionalGeneration.from_pretrained(
+                self.vlm_tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+                self.vlm_model = AutoModelForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map=self.device,
+                    device_map={"": self.device} if torch.cuda.is_available() else "auto",
                     trust_remote_code=True
                 )
                 self.vlm_model.eval()
@@ -394,21 +403,30 @@ class MultimodalFilterClassifier:
                 caption = self.vlm_processor.batch_decode(outputs, skip_special_tokens=True)[0]
             
             elif self.vlm_model_type == "qwen-vl":
-                # Qwen-VL 프롬프트 형식
-                query = self.vlm_processor.from_list_format([
-                    {'image': pil_image},
-                    {'text': instruction}
-                ])
-                
-                inputs = self.vlm_processor(query, return_tensors='pt').to(self.device)
-                
-                with torch.no_grad():
-                    outputs = self.vlm_model.generate(
-                        **inputs,
-                        max_new_tokens=100,
-                        temperature=0.7
-                    )
-                caption = self.vlm_processor.decode(outputs[0], skip_special_tokens=True)
+                # Qwen-VL 프롬프트 형식 (이미지를 임시 파일로 저장)
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
+                    pil_image.save(tmp_file.name)
+                    img_path = tmp_file.name
+
+                try:
+                    query = self.vlm_tokenizer.from_list_format([
+                        {'image': img_path},
+                        {'text': instruction}
+                    ])
+
+                    inputs = self.vlm_tokenizer(query, return_tensors='pt').to(self.device)
+
+                    with torch.no_grad():
+                        outputs = self.vlm_model.generate(
+                            **inputs,
+                            max_new_tokens=100
+                        )
+                    caption = self.vlm_tokenizer.decode(outputs[0], skip_special_tokens=True)
+                finally:
+                    # 임시 파일 삭제
+                    if os.path.exists(img_path):
+                        os.remove(img_path)
             
             elif self.vlm_model_type == "blip":
                 # BLIP은 instruction을 직접 지원하지 않음 (기본 captioning)
@@ -495,15 +513,26 @@ class MultimodalFilterClassifier:
                         text_features = outputs.last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
                 
                 elif self.vlm_model_type == "qwen-vl":
-                    query = self.vlm_processor.from_list_format([
-                        {'image': pil_image},
-                        {'text': self.instruction_prompt}
-                    ])
-                    inputs = self.vlm_processor(query, return_tensors='pt').to(self.device)
-                    
-                    with torch.no_grad():
-                        outputs = self.vlm_model.visual(**inputs)
-                        text_features = outputs.last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
+                    # Qwen-VL은 이미지를 임시 파일로 저장 필요
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
+                        pil_image.save(tmp_file.name)
+                        img_path = tmp_file.name
+
+                    try:
+                        query = self.vlm_tokenizer.from_list_format([
+                            {'image': img_path},
+                            {'text': self.instruction_prompt}
+                        ])
+                        inputs = self.vlm_tokenizer(query, return_tensors='pt').to(self.device)
+
+                        with torch.no_grad():
+                            # 비전 인코더에서 특징 추출
+                            outputs = self.vlm_model.transformer(**inputs, output_hidden_states=True)
+                            text_features = outputs.hidden_states[-1].mean(dim=1).squeeze().cpu().numpy()
+                    finally:
+                        if os.path.exists(img_path):
+                            os.remove(img_path)
             
             # 기존 captioning 모델의 경우
             elif self.vlm_model_type == "blip":
@@ -554,41 +583,109 @@ class MultimodalFilterClassifier:
             print(f"⚠️ 이미지 특징 추출 오류: {e}")
             return np.zeros(self.image_embed_dim)
     
-    def classify(self, image: np.ndarray) -> Tuple[int, float]:
+    def classify(self, image: np.ndarray, image_name: str = None,
+                bbox: Tuple = None) -> Tuple[int, float, str]:
         """
-        객체 이미지 분류
-        
+        객체 이미지 분류 및 캡션 생성
+
+        Args:
+            image: 입력 이미지
+            image_name: 이미지 파일명 (캡션 저장용)
+            bbox: 바운딩 박스 (x1, y1, x2, y2) (캡션 저장용)
+
         Returns:
-            (pred_class, confidence): 0=target, 1=non-target
+            (pred_class, confidence, caption): 0=target, 1=non-target, 신뢰도, 생성된 캡션
         """
         if self.model is None:
             print("⚠️ 모델이 로드되지 않음")
-            return 1, 0.0
-        
+            return 1, 0.0, ""
+
         if image.shape[0] < 10 or image.shape[1] < 10:
-            return 1, 0.0
-        
+            return 1, 0.0, ""
+
         try:
+            # 캡션 생성
+            caption = self.generate_detailed_caption(image)
+
             # 특징 추출
             text_features = self.extract_text_features(image)
             image_features = self.extract_image_features(image)
-            
+
             # 텐서 변환
             text_tensor = torch.FloatTensor(text_features).unsqueeze(0).to(self.device)
             image_tensor = torch.FloatTensor(image_features).unsqueeze(0).to(self.device)
-            
+
             # 분류
             self.model.eval()
             with torch.no_grad():
                 logits = self.model(text_tensor, image_tensor)
                 probabilities = torch.nn.functional.softmax(logits, dim=1)
                 conf, predicted = torch.max(probabilities, 1)
-            
-            return predicted.item(), conf.item()
-            
+
+            pred_class = predicted.item()
+            confidence = conf.item()
+
+            # 캡션 저장 (요청된 경우)
+            if self.save_captions and image_name and bbox:
+                self.save_caption(image_name, bbox, caption, pred_class, confidence)
+
+            return pred_class, confidence, caption
+
         except Exception as e:
             print(f"⚠️ 분류 중 오류: {e}")
-            return 1, 0.0
+            return 1, 0.0, ""
+
+    def save_caption(self, image_name: str, bbox: Tuple, caption: str,
+                    class_id: int, confidence: float):
+        """
+        객체 캡션을 파일에 저장
+
+        Args:
+            image_name: 이미지 파일명
+            bbox: 바운딩 박스 (x1, y1, x2, y2)
+            caption: 생성된 캡션
+            class_id: 클래스 ID
+            confidence: 신뢰도
+        """
+        try:
+            from utils import append_caption_to_file
+
+            # 캡션 디렉토리 생성
+            os.makedirs(self.captions_dir, exist_ok=True)
+
+            # 캡션 파일 경로
+            captions_file = os.path.join(self.captions_dir, "captions.json")
+
+            # 캡션 저장
+            append_caption_to_file(
+                image_name=image_name,
+                bbox=bbox,
+                caption=caption,
+                class_id=class_id,
+                confidence=confidence,
+                captions_file=captions_file
+            )
+
+            # 캐시에도 저장
+            cache_key = f"{image_name}_{bbox}"
+            self.captions_cache[cache_key] = caption
+
+        except Exception as e:
+            print(f"⚠️ 캡션 저장 중 오류: {e}")
+
+    def get_caption(self, image_name: str, bbox: Tuple) -> str:
+        """
+        저장된 캡션 조회
+
+        Args:
+            image_name: 이미지 파일명
+            bbox: 바운딩 박스
+
+        Returns:
+            저장된 캡션 (없으면 빈 문자열)
+        """
+        cache_key = f"{image_name}_{bbox}"
+        return self.captions_cache.get(cache_key, "")
     
     def load_model(self, model_path: str):
         """학습된 모델 로드"""

@@ -8,7 +8,8 @@ import numpy as np
 import torch
 import time
 import glob
-from typing import List, Tuple
+import json
+from typing import List, Tuple, Dict, Any
 
 def set_seed(seed: int = 42):
     """전역 시드 설정"""
@@ -225,17 +226,79 @@ class Timer:
 
 def check_dependencies():
     """필수 라이브러리 확인"""
-    required = ['torch', 'torchvision', 'ultralytics', 'cv2', 'PIL', 
+    required = ['torch', 'torchvision', 'ultralytics', 'cv2', 'PIL',
                 'numpy', 'pandas', 'tqdm', 'yaml']
-    
+
     missing = []
     for package in required:
         try:
             __import__(package)
         except ImportError:
             missing.append(package)
-    
+
     if missing:
         raise ImportError(f"필수 패키지 누락: {missing}")
-    
+
     return True
+
+def save_captions_to_json(captions_data: Dict[str, Any], save_path: str):
+    """
+    객체 캡션을 JSON 파일로 저장
+
+    Args:
+        captions_data: 캡션 데이터 딕셔너리
+        save_path: 저장할 JSON 파일 경로
+    """
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    with open(save_path, 'w', encoding='utf-8') as f:
+        json.dump(captions_data, f, ensure_ascii=False, indent=2)
+
+def load_captions_from_json(json_path: str) -> Dict[str, Any]:
+    """
+    JSON 파일에서 캡션 데이터 로드
+
+    Args:
+        json_path: JSON 파일 경로
+
+    Returns:
+        캡션 데이터 딕셔너리
+    """
+    if not os.path.exists(json_path):
+        return {}
+
+    with open(json_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def append_caption_to_file(image_name: str, bbox: Tuple, caption: str,
+                          class_id: int, confidence: float,
+                          captions_file: str):
+    """
+    단일 객체 캡션을 JSON 파일에 추가
+
+    Args:
+        image_name: 이미지 파일명
+        bbox: 바운딩 박스 (x1, y1, x2, y2)
+        caption: 생성된 캡션
+        class_id: 클래스 ID
+        confidence: 신뢰도
+        captions_file: 캡션 JSON 파일 경로
+    """
+    # 기존 데이터 로드
+    captions_data = load_captions_from_json(captions_file)
+
+    # 이미지 키가 없으면 생성
+    if image_name not in captions_data:
+        captions_data[image_name] = {"objects": []}
+
+    # 객체 정보 추가
+    obj_info = {
+        "bbox": list(bbox),
+        "caption": caption,
+        "class": int(class_id),
+        "confidence": float(confidence)
+    }
+
+    captions_data[image_name]["objects"].append(obj_info)
+
+    # 저장
+    save_captions_to_json(captions_data, captions_file)
