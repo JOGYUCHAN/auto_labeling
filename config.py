@@ -101,7 +101,7 @@ class ExperimentConfig:
                 errors.append("캡셔닝 분류기 사용 시 target_keywords가 필요합니다")
         
         if self.use_multimodal_filter:
-            valid_vlm = ["blip", "vit-gpt2"]
+            valid_vlm = ["blip", "vit-gpt2", "instructblip", "llava", "qwen-vl"]
             if self.multimodal_vlm_type not in valid_vlm:
                 errors.append(f"멀티모달 VLM 타입은 {valid_vlm} 중 하나여야 합니다")
             

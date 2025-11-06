@@ -2,32 +2,36 @@
 detector.py - 객체 탐지 및 분류 통합 모듈 (간소화 버전)
 """
 
+import os
 import cv2
 import numpy as np
 from ultralytics import YOLO
 from typing import List, Tuple, Optional, Dict, Union
 from classifier import ObjectClassifier
 from captioning_classifier import ImageCaptioningClassifier
+from multimodal_classifier import MultimodalFilterClassifier
 from utils import xyxy_to_yolo
 
 class ObjectDetector:
     """객체 탐지 및 분류 통합 클래스"""
     
     def __init__(self, model_path: str,
-                 classifier: Optional[Union[ObjectClassifier, ImageCaptioningClassifier]] = None,
-                 conf_threshold: float = 0.25, 
+                 classifier: Optional[Union[ObjectClassifier, ImageCaptioningClassifier, MultimodalFilterClassifier]] = None,
+                 conf_threshold: float = 0.25,
                  iou_threshold: float = 0.5):
         """탐지기 초기화"""
         self.model = YOLO(model_path)
         self.classifier = classifier
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
-        
+
         self.use_classifier = classifier is not None
-        
+
         # 분류기 타입 확인
         self.classifier_type = "none"
-        if isinstance(classifier, ImageCaptioningClassifier):
+        if isinstance(classifier, MultimodalFilterClassifier):
+            self.classifier_type = "multimodal"
+        elif isinstance(classifier, ImageCaptioningClassifier):
             self.classifier_type = "captioning"
         elif isinstance(classifier, ObjectClassifier):
             self.classifier_type = "traditional"
@@ -89,18 +93,35 @@ class ObjectDetector:
             
             # 분류 필터링
             if apply_filtering and obj_img.size > 0:
-                pred_class, class_conf = self.classifier.classify(obj_img)
+                # 멀티모달 분류기는 캡션도 반환
+                if self.classifier_type == "multimodal":
+                    image_name = os.path.basename(image_path)
+                    bbox = (x1, y1, x2, y2)
+                    pred_class, class_conf, caption = self.classifier.classify(obj_img, image_name, bbox)
+                else:
+                    pred_class, class_conf = self.classifier.classify(obj_img)
+
                 self.stats['classification_calls'] += 1
-                
+
                 if pred_class == 0:  # 양성
                     detected_objects.append([cls_id, center_x, center_y, width, height])
                     self._draw_detection(img_with_all_boxes, x1, y1, x2, y2, conf, "Y", (0, 255, 0))
                     if img_with_filtered_boxes is not None:
-                        label = "C0" if self.classifier_type == "traditional" else "K0"
+                        if self.classifier_type == "traditional":
+                            label = "C0"
+                        elif self.classifier_type == "multimodal":
+                            label = "M0"
+                        else:
+                            label = "K0"
                         self._draw_detection(img_with_filtered_boxes, x1, y1, x2, y2, class_conf, label, (0, 255, 0))
                 else:  # 음성
                     filtered_objects.append([cls_id, center_x, center_y, width, height])
-                    label = "C1" if self.classifier_type == "traditional" else "K1"
+                    if self.classifier_type == "traditional":
+                        label = "C1"
+                    elif self.classifier_type == "multimodal":
+                        label = "M1"
+                    else:
+                        label = "K1"
                     self._draw_detection(img_with_all_boxes, x1, y1, x2, y2, class_conf, label, (0, 0, 255))
                     self.stats['filtered_detections'] += 1
             else:
@@ -124,12 +145,15 @@ class ObjectDetector:
         """YOLO 모델 업데이트"""
         self.model = YOLO(new_model_path)
     
-    def update_classifier(self, new_classifier: Union[ObjectClassifier, ImageCaptioningClassifier]):
+    def update_classifier(self, new_classifier: Union[ObjectClassifier, ImageCaptioningClassifier, MultimodalFilterClassifier]):
         """분류 모델 업데이트"""
         self.classifier = new_classifier
         self.use_classifier = new_classifier is not None
-        
-        if isinstance(new_classifier, ImageCaptioningClassifier):
+
+        if isinstance(new_classifier, MultimodalFilterClassifier):
+            self.classifier_type = "multimodal"
+            print("분류기 업데이트: 멀티모달")
+        elif isinstance(new_classifier, ImageCaptioningClassifier):
             self.classifier_type = "captioning"
             print("분류기 업데이트: 캡셔닝")
         elif isinstance(new_classifier, ObjectClassifier):
@@ -210,9 +234,15 @@ class CroppedObjectCollector:
                 
                 # 분류
                 if self.detector.classifier:
-                    pred_class, class_conf = self.detector.classifier.classify(obj_img)
-                    
-                    if self.detector.classifier_type != "captioning" and class_conf < 0.3:
+                    # 멀티모달 분류기는 캡션도 반환
+                    if self.detector.classifier_type == "multimodal":
+                        image_name = os.path.basename(image_file)
+                        bbox_coords = (x1, y1, x2, y2)
+                        pred_class, class_conf, caption = self.detector.classifier.classify(obj_img, image_name, bbox_coords)
+                    else:
+                        pred_class, class_conf = self.detector.classifier.classify(obj_img)
+
+                    if self.detector.classifier_type not in ["captioning", "multimodal"] and class_conf < 0.3:
                         continue
                 else:
                     pred_class = 0
