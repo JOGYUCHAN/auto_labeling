@@ -13,6 +13,7 @@ from typing import List, Tuple, Optional, Dict
 from PIL import Image
 from tqdm import tqdm
 import random
+import gc
 
 # VLM 관련
 try:
@@ -220,10 +221,37 @@ class MultimodalFilterClassifier:
         print(f"  - CNN: DenseNet121")
         print(f"  - 키워드: {self.target_keywords}")
         print(f"  - Instruction Prompt: {self.instruction_prompt[:100]}...")
-    
+
+    def clear_memory(self):
+        """CUDA 메모리 정리 유틸리티"""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
+
+    def print_memory_status(self, prefix=""):
+        """현재 GPU 메모리 상태 출력"""
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated(self.device) / 1024**3
+            reserved = torch.cuda.memory_reserved(self.device) / 1024**3
+            total = torch.cuda.get_device_properties(self.device).total_memory / 1024**3
+            free = total - allocated
+            print(f"{prefix}GPU 메모리 상태:")
+            print(f"  - 총 용량: {total:.2f} GB")
+            print(f"  - 할당됨: {allocated:.2f} GB")
+            print(f"  - 예약됨: {reserved:.2f} GB")
+            print(f"  - 사용 가능: {free:.2f} GB")
+
     def _initialize_vlm(self):
         """VLM 모델 초기화 (Instruction-based 모델 포함)"""
         try:
+            # CUDA 메모리 최적화: 캐시 정리 및 가비지 컬렉션
+            if torch.cuda.is_available():
+                print("\n" + "="*60)
+                print("CUDA 메모리 최적화 시작")
+                print("="*60)
+                self.print_memory_status("초기화 전 ")
+                print("\nCUDA 메모리 정리 중...")
+                self.clear_memory()
             if self.vlm_model_type == "instructblip":
                 if not INSTRUCTBLIP_AVAILABLE:
                     raise ImportError("transformers 라이브러리에서 InstructBLIP 필요")
@@ -262,16 +290,36 @@ class MultimodalFilterClassifier:
 
                 print("Qwen-VL 모델 로딩...")
                 model_name = "Qwen/Qwen-VL-Chat"
+
+                # 토크나이저 로드
+                print("  - 토크나이저 로딩 중...")
                 self.vlm_tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+
+                # 메모리 효율적 모델 로딩
+                print("  - 모델 로딩 중 (메모리 최적화 활성화)...")
                 self.vlm_model = AutoModelForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map={"": self.device} if torch.cuda.is_available() else "auto",
-                    trust_remote_code=True
+                    device_map="auto",  # 자동 디바이스 할당 (메모리 효율적)
+                    trust_remote_code=True,
+                    low_cpu_mem_usage=True,  # CPU 메모리 사용량 최소화
+                    max_memory={self.device.index: "8GB"} if torch.cuda.is_available() and hasattr(self.device, 'index') else None  # GPU 메모리 제한
                 )
                 self.vlm_model.eval()
+
+                # 그래디언트 비활성화 (추론 전용)
+                for param in self.vlm_model.parameters():
+                    param.requires_grad = False
+
                 self.text_embed_dim = 4096  # Qwen hidden size
+
+                # 메모리 정리 및 상태 출력
+                if torch.cuda.is_available():
+                    self.clear_memory()
+                    self.print_memory_status("모델 로딩 후 ")
+
                 print("✓ Qwen-VL 로딩 완료")
+                print("="*60 + "\n")
             
             elif self.vlm_model_type == "blip":
                 if not BLIP_AVAILABLE:
@@ -302,6 +350,26 @@ class MultimodalFilterClassifier:
             else:
                 raise ValueError(f"지원하지 않는 VLM 모델: {self.vlm_model_type}")
                 
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "CUDA out of memory" in error_msg or "out of memory" in error_msg.lower():
+                print(f"\n{'='*60}")
+                print("✗ CUDA 메모리 부족 오류")
+                print("="*60)
+                print(f"오류: {e}\n")
+
+                if torch.cuda.is_available():
+                    self.print_memory_status("현재 ")
+
+                print("\n해결 방법:")
+                print("1. 다른 프로세스가 GPU를 사용 중이면 종료하세요")
+                print("2. 더 작은 VLM 모델을 사용하세요 (예: 'blip' 또는 'vit-gpt2')")
+                print("3. GPU 메모리가 더 큰 GPU를 사용하세요")
+                print("4. CPU 모드로 실행하세요 (느리지만 메모리 제약 없음)")
+                print("="*60 + "\n")
+            else:
+                print(f"✗ VLM 모델 초기화 실패 (RuntimeError): {e}")
+            self.vlm_model = None
         except Exception as e:
             print(f"✗ VLM 모델 초기화 실패: {e}")
             self.vlm_model = None
@@ -309,22 +377,36 @@ class MultimodalFilterClassifier:
     def _initialize_cnn(self):
         """CNN 특징 추출기 초기화"""
         print("DenseNet121 특징 추출기 로딩...")
+
+        # 메모리 정리
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
+
         self.cnn_model = models.densenet121(weights='IMAGENET1K_V1')
-        
+
         # 특징 추출을 위해 분류 헤드 제거
         self.image_embed_dim = self.cnn_model.classifier.in_features
         self.cnn_model.classifier = nn.Identity()
-        
+
         self.cnn_model.to(self.device)
         self.cnn_model.eval()
-        
+
+        # 그래디언트 비활성화 (추론 전용)
+        for param in self.cnn_model.parameters():
+            param.requires_grad = False
+
         # 이미지 전처리
         self.image_transform = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
-        
+
+        # 메모리 정리
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         print("✓ DenseNet121 로딩 완료")
     
     def generate_detailed_caption(self, image: np.ndarray, prompt: str = None) -> str:

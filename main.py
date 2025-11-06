@@ -4,7 +4,13 @@ main.py - 멀티모달 필터 지원 Active Learning 실험 실행기
 
 import os
 
-# GPU 설정 (가장 먼저 실행)
+# ==========================================
+# CUDA 메모리 최적화 설정 (가장 먼저 실행)
+# ==========================================
+# CUDA 메모리 단편화 방지 및 효율적 할당 설정
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128,expandable_segments:True'
+
+# GPU 설정
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'  # GPU 2번 사용
 
 import time
