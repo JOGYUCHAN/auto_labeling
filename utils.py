@@ -243,15 +243,32 @@ def check_dependencies():
 
 def save_captions_to_json(captions_data: Dict[str, Any], save_path: str):
     """
-    객체 캡션을 JSON 파일로 저장
+    객체 캡션을 JSON 파일로 저장 (원자적 쓰기)
 
     Args:
         captions_data: 캡션 데이터 딕셔너리
         save_path: 저장할 JSON 파일 경로
     """
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    with open(save_path, 'w', encoding='utf-8') as f:
-        json.dump(captions_data, f, ensure_ascii=False, indent=2)
+
+    # 임시 파일에 먼저 쓰기 (원자적 쓰기)
+    temp_path = f"{save_path}.tmp"
+    try:
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(captions_data, f, ensure_ascii=False, indent=2)
+
+        # 원자적 이동
+        import shutil
+        shutil.move(temp_path, save_path)
+    except Exception as e:
+        print(f"⚠️ JSON 저장 오류: {e}")
+        # 임시 파일 정리
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        raise
 
 def load_captions_from_json(json_path: str) -> Dict[str, Any]:
     """
@@ -266,14 +283,34 @@ def load_captions_from_json(json_path: str) -> Dict[str, Any]:
     if not os.path.exists(json_path):
         return {}
 
-    with open(json_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            if not content.strip():  # 빈 파일
+                return {}
+            return json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"⚠️ JSON 파일 손상 ({json_path}): {e}")
+        print(f"⚠️ 백업 생성 후 새로 시작합니다")
+        # 손상된 파일 백업
+        import time
+        backup_path = f"{json_path}.backup_{int(time.time())}"
+        try:
+            import shutil
+            shutil.copy2(json_path, backup_path)
+            print(f"   백업 저장: {backup_path}")
+        except:
+            pass
+        return {}
+    except Exception as e:
+        print(f"⚠️ JSON 로드 오류: {e}")
+        return {}
 
 def append_caption_to_file(image_name: str, bbox: Tuple, caption: str,
                           class_id: int, confidence: float,
                           captions_file: str):
     """
-    단일 객체 캡션을 JSON 파일에 추가
+    단일 객체 캡션을 JSON 파일에 추가 (파일 잠금 포함)
 
     Args:
         image_name: 이미지 파일명
@@ -283,22 +320,70 @@ def append_caption_to_file(image_name: str, bbox: Tuple, caption: str,
         confidence: 신뢰도
         captions_file: 캡션 JSON 파일 경로
     """
-    # 기존 데이터 로드
-    captions_data = load_captions_from_json(captions_file)
+    import threading
+    import time
 
-    # 이미지 키가 없으면 생성
-    if image_name not in captions_data:
-        captions_data[image_name] = {"objects": []}
+    # 파일 잠금용 (간단한 방법)
+    lock_file = f"{captions_file}.lock"
+    max_retries = 5
+    retry_delay = 0.1
 
-    # 객체 정보 추가
-    obj_info = {
-        "bbox": list(bbox),
-        "caption": caption,
-        "class": int(class_id),
-        "confidence": float(confidence)
-    }
+    for attempt in range(max_retries):
+        try:
+            # 간단한 파일 잠금 (lock 파일 생성)
+            if os.path.exists(lock_file):
+                time.sleep(retry_delay)
+                continue
 
-    captions_data[image_name]["objects"].append(obj_info)
+            # Lock 생성
+            with open(lock_file, 'w') as lock:
+                lock.write(str(os.getpid()))
 
-    # 저장
-    save_captions_to_json(captions_data, captions_file)
+            try:
+                # 기존 데이터 로드
+                captions_data = load_captions_from_json(captions_file)
+
+                # 이미지 키가 없으면 생성
+                if image_name not in captions_data:
+                    captions_data[image_name] = {"objects": []}
+
+                # bbox를 확실히 list로 변환 (numpy array 대응)
+                if hasattr(bbox, 'tolist'):
+                    bbox_list = bbox.tolist()
+                else:
+                    bbox_list = [float(x) for x in bbox]
+
+                # 객체 정보 추가
+                obj_info = {
+                    "bbox": bbox_list,
+                    "caption": str(caption),
+                    "class": int(class_id),
+                    "confidence": float(confidence)
+                }
+
+                captions_data[image_name]["objects"].append(obj_info)
+
+                # 저장
+                save_captions_to_json(captions_data, captions_file)
+
+                # 성공
+                break
+
+            finally:
+                # Lock 해제
+                try:
+                    os.remove(lock_file)
+                except:
+                    pass
+
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"⚠️ 캡션 저장 실패 (최대 재시도 초과): {e}")
+                # Lock 정리
+                try:
+                    os.remove(lock_file)
+                except:
+                    pass
+            else:
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
