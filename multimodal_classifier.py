@@ -245,11 +245,13 @@ class MultimodalFilterClassifier:
                 self.vlm_processor = InstructBlipProcessor.from_pretrained(model_name)
 
                 # Accelerate 사용 가능 여부에 따라 로딩 방식 결정
-                if ACCELERATE_AVAILABLE:
+                if ACCELERATE_AVAILABLE and torch.cuda.is_available():
+                    # 단일 GPU로 제한 (멀티 GPU 분산 시 텐서 디바이스 불일치 방지)
+                    device_map = {"": self.device}
                     self.vlm_model = InstructBlipForConditionalGeneration.from_pretrained(
                         model_name,
-                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                        device_map="auto"
+                        torch_dtype=torch.float16,
+                        device_map=device_map
                     )
                 else:
                     print("  ⚠️ Accelerate 미설치 - CPU/단일 GPU 모드로 로딩")
@@ -272,11 +274,13 @@ class MultimodalFilterClassifier:
                 self.vlm_processor = AutoProcessor.from_pretrained(model_name)
 
                 # Accelerate 사용 가능 여부에 따라 로딩 방식 결정
-                if ACCELERATE_AVAILABLE:
+                if ACCELERATE_AVAILABLE and torch.cuda.is_available():
+                    # 단일 GPU로 제한 (멀티 GPU 분산 시 텐서 디바이스 불일치 방지)
+                    device_map = {"": self.device}
                     self.vlm_model = LlavaForConditionalGeneration.from_pretrained(
                         model_name,
-                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                        device_map="auto"
+                        torch_dtype=torch.float16,
+                        device_map=device_map
                     )
                 else:
                     print("  ⚠️ Accelerate 미설치 - CPU/단일 GPU 모드로 로딩")
@@ -300,10 +304,12 @@ class MultimodalFilterClassifier:
 
                 # Accelerate 사용 가능 여부에 따라 로딩 방식 결정
                 if ACCELERATE_AVAILABLE and torch.cuda.is_available():
+                    # 단일 GPU로 제한 (멀티 GPU 분산 시 텐서 디바이스 불일치 방지)
+                    device_map = {"": self.device}
                     self.vlm_model = AutoModelForCausalLM.from_pretrained(
                         model_name,
                         torch_dtype=torch.float16,
-                        device_map="auto",
+                        device_map=device_map,
                         trust_remote_code=True
                     )
                 else:
