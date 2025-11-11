@@ -20,6 +20,8 @@ class ExperimentConfig:
     
     # 하드웨어 설정
     gpu_num: int = 0
+    use_ddp: bool = False  # DDP(Distributed Data Parallel) 사용 여부
+    gpu_devices: List[int] = None  # DDP 사용 시 GPU 리스트 (예: [0,1,2,3])
     
     # 학습 파라미터
     conf_threshold: float = 0.25
@@ -69,6 +71,8 @@ class ExperimentConfig:
         """초기화 후 처리"""
         if self.target_keywords is None:
             self.target_keywords = ['car']
+        if self.gpu_devices is None:
+            self.gpu_devices = [0]
     
     def validate(self):
         """설정 유효성 검사"""
@@ -125,7 +129,18 @@ class ExperimentConfig:
         
         if self.max_cycles <= 0:
             errors.append("max_cycles는 양수여야 합니다")
-        
+
+        # DDP 설정 검증
+        if self.use_ddp:
+            if not self.gpu_devices or len(self.gpu_devices) < 2:
+                errors.append("DDP 사용 시 gpu_devices는 최소 2개 이상이어야 합니다")
+
+            import torch
+            if not torch.cuda.is_available():
+                errors.append("DDP 사용 시 CUDA가 필요합니다")
+            elif len(self.gpu_devices) > torch.cuda.device_count():
+                errors.append(f"사용 가능한 GPU 수({torch.cuda.device_count()})보다 많은 GPU를 지정했습니다")
+
         if errors:
             raise ValueError("\n".join(errors))
     
@@ -140,7 +155,10 @@ class ExperimentConfig:
         summary.append(f"라벨: {self.label_dir} ({'사용' if self.labels_available else '미사용'})")
         summary.append(f"출력: {self.output_dir}")
         summary.append(f"최대 사이클: {self.max_cycles}")
-        summary.append(f"GPU: {self.gpu_num}")
+        if self.use_ddp:
+            summary.append(f"GPU: {self.gpu_devices} (DDP 모드)")
+        else:
+            summary.append(f"GPU: {self.gpu_num} (단일 GPU)")
         summary.append("")
         
         # 분류기 설정

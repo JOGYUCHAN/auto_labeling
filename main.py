@@ -1,14 +1,19 @@
 """
-main.py - 멀티모달 필터 지원 Active Learning 실험 실행기
+main.py - 멀티모달 필터 지원 Active Learning 실험 실행기 (DDP 지원)
 """
 
 import os
 
-# GPU 설정 (가장 먼저 실행)
-# os.environ['CUDA_VISIBLE_DEVICES'] = '2'  # GPU 2번 사용
+# DDP 설정 (가장 먼저 실행)
+# 단일 GPU 사용 시:
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'  # GPU 2번만 사용
+
+# 멀티 GPU 사용 시 (DDP):
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'  # 4개 GPU 사용
 
 import time
 import traceback
+from datetime import datetime
 from config import ExperimentConfig
 from utils import check_dependencies, get_model_files, Timer
 from active_learning import YOLOActiveLearning
@@ -174,18 +179,24 @@ def main():
     # 실험 파라미터 설정
     # ==========================================
     
-    models_dir = "../model weights/YOLO/coco_vehicle"
-    classifiers_dir = "../model weights/Classification/visdrone"
-    image_dir = "../data/car_object_detection/images"
-    label_dir = "../data/car_object_detection/labels"
-    output_dir = "../experiment_results/kaggle_multi_modal"
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    models_dir = "../../model weights/YOLO/coco_vehicle"
+    classifiers_dir = "../../model weights/Classification/visdrone"
+    image_dir = "../../data/visdrone_filtered/images"
+    label_dir = "../../data/visdrone_filtered/labels"
+    output_dir = f"../../additional_study/visdrone/{current_time}"
     
     # 기본 파라미터
     conf_threshold = 0.25
     iou_threshold = 0.5
     class_conf_threshold = 0.5
     max_cycles = 10
-    gpu_num = 2 
+
+    # GPU 설정
+    use_ddp = True  # DDP(Distributed Data Parallel) 사용 여부
+    gpu_devices = [0, 1, 2, 3]  # 사용할 GPU 리스트 (DDP 시)
+    gpu_num = 2  # 단일 GPU 모드 시 사용할 GPU 번호 (VLM 초기화용) 
     
     # ==========================================
     # 분류기 설정 (3가지 중 1개만 선택)
@@ -203,14 +214,17 @@ def main():
     use_multimodal_filter = True
 
     # VLM 모델 선택 (아래 중 하나 선택)
-    multimodal_vlm_type = "qwen-vl"  # 추천 모델 옵션:
-    # - "blip": 가볍고 빠름 (기본)
-    # - "vit-gpt2": BLIP 대안, 비슷한 성능
-    # - "instructblip": 상세한 설명, 7B 모델 (VRAM 요구량 높음)
-    # - "llava": 멀티모달 대화형 모델, 7B (VRAM 요구량 높음)
-    # - "qwen-vl": Qwen 기반 VLM, 상세 설명 지원 ✓ 추천!
+    multimodal_vlm_type = "vit-gpt2"  # 추천 모델 옵션:
+    # - "blip": 가볍고 빠름 (~1GB VRAM) ✓ RTX 3080 권장!
+    # - "vit-gpt2": BLIP 대안, 비슷한 성능 (~1GB VRAM)
+    # - "instructblip": 상세한 설명, 7B 모델 (>16GB VRAM 필요)
+    # - "llava": 멀티모달 대화형 모델, 7B (>16GB VRAM 필요)
+    # - "qwen-vl": Qwen 기반 VLM, 상세 설명 지원 (>16GB VRAM 필요)
+    #
+    # ⚠️ RTX 3080 (9.78 GB)에서는 blip 또는 vit-gpt2만 사용 가능합니다!
+    # 대형 모델(instructblip, llava, qwen-vl)은 A100, V100 등 필요
 
-    multimodal_train_samples = 100  # 클래스당 IoU 기반 학습 샘플 수
+    multimodal_train_samples = 1000  # 클래스당 IoU 기반 학습 샘플 수
 
     # 멀티모달 Target/Non-target 분류 IoU 임계값
     multimodal_iou_threshold = 0.5  # Target: ≥0.5, Non-target: <0.5
@@ -338,6 +352,8 @@ def main():
         output_dir=output_dir,
         labels_available=labels_available,
         gpu_num=gpu_num,
+        use_ddp=use_ddp,
+        gpu_devices=gpu_devices,
         conf_threshold=conf_threshold,
         iou_threshold=iou_threshold,
         class_conf_threshold=class_conf_threshold,
