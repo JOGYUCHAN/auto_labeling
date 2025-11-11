@@ -97,7 +97,7 @@ class ObjectDetector:
                 if self.classifier_type == "multimodal":
                     image_name = os.path.basename(image_path)
                     bbox = (x1, y1, x2, y2)
-                    pred_class, class_conf, caption = self.classifier.classify(obj_img, image_name, bbox)
+                    pred_class, class_conf, caption = self.classifier.classify(obj_img, image_name, bbox, cycle)
                 else:
                     pred_class, class_conf = self.classifier.classify(obj_img)
 
@@ -238,7 +238,7 @@ class CroppedObjectCollector:
                     if self.detector.classifier_type == "multimodal":
                         image_name = os.path.basename(image_file)
                         bbox_coords = (x1, y1, x2, y2)
-                        pred_class, class_conf, caption = self.detector.classifier.classify(obj_img, image_name, bbox_coords)
+                        pred_class, class_conf, caption = self.detector.classifier.classify(obj_img, image_name, bbox_coords, cycle)
                     else:
                         pred_class, class_conf = self.detector.classifier.classify(obj_img)
 

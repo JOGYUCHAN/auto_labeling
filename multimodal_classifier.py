@@ -642,7 +642,7 @@ class MultimodalFilterClassifier:
             return np.zeros(self.image_embed_dim)
     
     def classify(self, image: np.ndarray, image_name: str = None,
-                bbox: Tuple = None) -> Tuple[int, float, str]:
+                bbox: Tuple = None, cycle: int = None) -> Tuple[int, float, str]:
         """
         객체 이미지 분류 및 캡션 생성
 
@@ -650,6 +650,7 @@ class MultimodalFilterClassifier:
             image: 입력 이미지
             image_name: 이미지 파일명 (캡션 저장용)
             bbox: 바운딩 박스 (x1, y1, x2, y2) (캡션 저장용)
+            cycle: 현재 사이클 번호 (캡션 저장용)
 
         Returns:
             (pred_class, confidence, caption): 0=target, 1=non-target, 신뢰도, 생성된 캡션
@@ -684,8 +685,8 @@ class MultimodalFilterClassifier:
             confidence = conf.item()
 
             # 캡션 저장 (요청된 경우)
-            if self.save_captions and image_name and bbox:
-                self.save_caption(image_name, bbox, caption, pred_class, confidence)
+            if self.save_captions and image_name and bbox and cycle is not None:
+                self.save_caption(image_name, bbox, caption, pred_class, confidence, cycle)
 
             return pred_class, confidence, caption
 
@@ -694,9 +695,9 @@ class MultimodalFilterClassifier:
             return 1, 0.0, ""
 
     def save_caption(self, image_name: str, bbox: Tuple, caption: str,
-                    class_id: int, confidence: float):
+                    class_id: int, confidence: float, cycle: int):
         """
-        객체 캡션을 파일에 저장
+        객체 캡션을 파일에 저장 (사이클별 분리)
 
         Args:
             image_name: 이미지 파일명
@@ -704,15 +705,17 @@ class MultimodalFilterClassifier:
             caption: 생성된 캡션
             class_id: 클래스 ID
             confidence: 신뢰도
+            cycle: 현재 사이클 번호
         """
         try:
             from utils import append_caption_to_file
 
-            # 캡션 디렉토리 생성
-            os.makedirs(self.captions_dir, exist_ok=True)
+            # 사이클별 캡션 디렉토리 생성
+            cycle_captions_dir = os.path.join(self.captions_dir, f"cycle_{cycle}")
+            os.makedirs(cycle_captions_dir, exist_ok=True)
 
-            # 캡션 파일 경로
-            captions_file = os.path.join(self.captions_dir, "captions.json")
+            # 사이클별 캡션 파일 경로
+            captions_file = os.path.join(cycle_captions_dir, "captions.json")
 
             # 캡션 저장
             append_caption_to_file(
@@ -724,8 +727,8 @@ class MultimodalFilterClassifier:
                 captions_file=captions_file
             )
 
-            # 캐시에도 저장
-            cache_key = f"{image_name}_{bbox}"
+            # 캐시에도 저장 (사이클 정보 포함)
+            cache_key = f"cycle{cycle}_{image_name}_{bbox}"
             self.captions_cache[cache_key] = caption
 
         except Exception as e:
