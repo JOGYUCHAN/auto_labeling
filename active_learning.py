@@ -87,14 +87,23 @@ class YOLOActiveLearning:
             
         elif self.config.use_captioning_classifier:
             print("캡셔닝 분류기 초기화...")
+            # 캡션 저장 디렉토리 설정
+            captions_dir = self.config.captions_output_dir
+            if captions_dir is None:
+                captions_dir = os.path.join(self.output_dir, "captions")
+
             self.classifier = ImageCaptioningClassifier(
                 target_keywords=self.config.target_keywords,
                 model_type=self.config.captioning_model_type,
                 device=self.device,
                 conf_threshold=self.config.class_conf_threshold,
-                gpu_num=self.config.gpu_num
+                gpu_num=self.config.gpu_num,
+                save_captions=self.config.save_captions,
+                captions_dir=captions_dir
             )
             print("✓ 캡셔닝 분류기 초기화 완료")
+            if self.config.save_captions:
+                print(f"  - 캡션 저장: {captions_dir}")
             
         elif self.config.use_classifier and self.classifier_path:
             print("기존 분류기 초기화...")
@@ -449,8 +458,15 @@ class YOLOActiveLearning:
             
             # 분류
             if self.detector.classifier:
-                pred_class, class_conf = self.detector.classifier.classify(obj_img)
-                if class_conf < 0.3:
+                # 멀티모달 및 캡셔닝 분류기는 캡션도 반환
+                if self.detector.classifier_type in ["multimodal", "captioning"]:
+                    image_name = os.path.basename(image_path)
+                    bbox_coords = (x1, y1, x2, y2)
+                    pred_class, class_conf, caption = self.detector.classifier.classify(obj_img, image_name, bbox_coords, cycle)
+                else:
+                    pred_class, class_conf = self.detector.classifier.classify(obj_img)
+
+                if self.detector.classifier_type not in ["captioning", "multimodal"] and class_conf < 0.3:
                     continue
             else:
                 pred_class = 0
