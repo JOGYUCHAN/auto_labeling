@@ -177,11 +177,11 @@ def main():
     
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    models_dir = "../../model weights/YOLO/coco_vehicle"
+    models_dir = "../../model weights/YOLO/coco_animal/yolov8n/weights"
     classifiers_dir = "../../model weights/Classification/visdrone"
-    image_dir = "../../data/visdrone_filtered/images"
-    label_dir = "../../data/visdrone_filtered/labels"
-    output_dir = f"../../additional_study/visdrone/{current_time}"
+    image_dir = "../../data/african-wildlife/train/images"
+    label_dir = "../../data/african-wildlife/train/labels"
+    output_dir = f"../../additional_study/wildlife/{current_time}"
     
     # 기본 파라미터
     conf_threshold = 0.25
@@ -203,14 +203,14 @@ def main():
     enable_classifier_retraining = False
     
     # 2. 캡셔닝 분류기
-    use_captioning_classifier = False
+    use_captioning_classifier = True
     captioning_model_type = "vit-gpt2"  # "blip" 또는 "vit-gpt2"
     
     # 3. 멀티모달 필터 (NEW!)
-    use_multimodal_filter = True
+    use_multimodal_filter = False
 
     # VLM 모델 선택 (아래 중 하나 선택)
-    multimodal_vlm_type = "qwen-vl"  # 추천 모델 옵션:
+    multimodal_vlm_type = "vit-gpt2"  # 추천 모델 옵션:
     # - "blip": 가볍고 빠름 (기본)
     # - "vit-gpt2": BLIP 대안, 비슷한 성능
     # - "instructblip": 상세한 설명, 7B 모델 (VRAM 요구량 높음)
@@ -233,7 +233,7 @@ def main():
     captions_output_dir = None  # None이면 output_dir/captions 사용
 
     # 공통 설정
-    target_keywords = ["car", "vehicle"]  # 양성 객체 키워드
+    target_keywords = ["buffalo", "elephant", 'rhino', 'zebra', 'animal', 'wildlife']  # 양성 객체 키워드
     
     # 기타 설정
     skip_cycle_0 = False  # Cycle 0 건너뛰기
