@@ -93,8 +93,8 @@ class ObjectDetector:
             
             # 분류 필터링
             if apply_filtering and obj_img.size > 0:
-                # 멀티모달 분류기는 캡션도 반환
-                if self.classifier_type == "multimodal":
+                # 멀티모달 및 캡셔닝 분류기는 캡션도 반환
+                if self.classifier_type in ["multimodal", "captioning"]:
                     image_name = os.path.basename(image_path)
                     bbox = (x1, y1, x2, y2)
                     pred_class, class_conf, caption = self.classifier.classify(obj_img, image_name, bbox, cycle)
@@ -234,8 +234,8 @@ class CroppedObjectCollector:
                 
                 # 분류
                 if self.detector.classifier:
-                    # 멀티모달 분류기는 캡션도 반환
-                    if self.detector.classifier_type == "multimodal":
+                    # 멀티모달 및 캡셔닝 분류기는 캡션도 반환
+                    if self.detector.classifier_type in ["multimodal", "captioning"]:
                         image_name = os.path.basename(image_file)
                         bbox_coords = (x1, y1, x2, y2)
                         pred_class, class_conf, caption = self.detector.classifier.classify(obj_img, image_name, bbox_coords, cycle)
